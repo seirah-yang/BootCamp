@@ -70,7 +70,7 @@
  - 학습결과 비교
   1) epochs = 10
       :  
-   ![img1.epochs10]()
+   ![img1.epochs10](https://github.com/seirah-yang/BootCamp/blob/main/Skin_Disease/epochs10.png)
   
   2) epochs = 30
       :   
