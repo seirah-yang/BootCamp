@@ -86,7 +86,7 @@
 
    - epochs = 10 설정하여 학습을 수행 했을 때의 결과 
 
-   ![graph1.Accuracy](https://Users/gom3ku/Documents/BootCamp/Skin_Disease/lr_scheduler_result1.png)
+   ![graph1.Accuracy](https://github.com/seirah-yang/BootCamp/blob/main/Skin_Disease/lr_scheduler_result1.png)
 
    - validation Accuracy: epochs = 4 이후 약간 하향 후 유지하는 양상을 보인다. 
 
@@ -94,7 +94,7 @@
 
    - 이를 통해 과적합의 위험을 예측 해 볼 수 있다. 
     
-   ![graph2.Loss](https://Users/gom3ku/Documents/BootCamp/Skin_Disease/lr_scheduler_result2.png)
+   ![graph2.Loss]()
 
    - validation Accuracy: 하향하다가 epochs = 4 이후로 정체되는 양상을 보인다.  
 
