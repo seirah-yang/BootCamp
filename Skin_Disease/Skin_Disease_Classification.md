@@ -70,7 +70,7 @@
  - 학습결과 비교
   1) epochs = 10
       :  
-   ![img1.epochs10](https:///Users/gom3ku/Documents/BootCamp/Skin_Disease/epochs10.png)
+   ![img1.epochs10]()
   
   2) epochs = 30
       :   
@@ -82,7 +82,7 @@
    
   4) learning rate scheduler 적용
   
-   ![img4.lr_scheduler](https://Users/gom3ku/Documents/BootCamp/Skin_Disease/lr_schedule.png)
+   ![img4.lr_scheduler](https://github.com/seirah-yang/BootCamp/blob/main/Skin_Disease/lr_schedule.png)
 
    - epochs = 10 설정하여 학습을 수행 했을 때의 결과 
 
