@@ -100,7 +100,7 @@
 
    - train Accuracy: 하향하다가 epochs = 4 이후로 정체되는 양상을 보인다.  
 
-   ![graph3.Learning_Rate]()
+   ![graph3.Learning_Rate](https://github.com/seirah-yang/BootCamp/blob/main/Skin_Disease/lr_scheduler_result3.png)
 
 
 6.결론 및 제언 
