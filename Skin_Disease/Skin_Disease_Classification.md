@@ -94,13 +94,13 @@
 
    - 이를 통해 과적합의 위험을 예측 해 볼 수 있다. 
     
-   ![graph2.Loss]()
+   ![graph2.Loss](https://github.com/seirah-yang/BootCamp/blob/main/Skin_Disease/lr_scheduler_result2.png)
 
    - validation Accuracy: 하향하다가 epochs = 4 이후로 정체되는 양상을 보인다.  
 
    - train Accuracy: 하향하다가 epochs = 4 이후로 정체되는 양상을 보인다.  
 
-   ![graph3.Learning_Rate](https://Users/gom3ku/Documents/BootCamp/Skin_Disease/lr_scheduler_result3.png)
+   ![graph3.Learning_Rate]()
 
 
 6.결론 및 제언 
