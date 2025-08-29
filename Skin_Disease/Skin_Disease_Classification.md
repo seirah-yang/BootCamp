@@ -69,17 +69,16 @@
 
  - 학습결과 비교
   1) epochs = 10
-      :  
    ![img1.epochs10](https://github.com/seirah-yang/BootCamp/blob/main/Skin_Disease/epochs10.png)
   
   2) epochs = 30
-      :   
-   ![](https://)
+   ![](https://github.com/seirah-yang/BootCamp/blob/main/Skin_Disease/epochs30.png)
    
   3) epochs = 60 
-      :   
-   ![](https://)
-   
+   ![](https://github.com/seirah-yang/BootCamp/blob/main/Skin_Disease/epochs60.png)
+
+   - epochs 10, 30, 60을 통해 심각한 과적합을 확인 할 수 있다.
+     
   4) learning rate scheduler 적용
   
    ![img4.lr_scheduler](https://github.com/seirah-yang/BootCamp/blob/main/Skin_Disease/lr_schedule.png)
