@@ -20,11 +20,11 @@
       
 2. 일시: 2025년 8월 28일, 알파코 End-to-End AI 개발자과정 2기 부트캠프
 
-3. train/test Data  
+3. Image Dataset 
 
-    Kaggle Skin Disease Classification [Image Dataset]: https://www.kaggle.com/datasets/riyaelizashaju/skin-disease-classification-image-dataset
+   Kaggle Skin Disease Classification: https://www.kaggle.com/datasets/riyaelizashaju/skin-disease-classification-image-dataset
     
-      - Kaggle에서 다운로드 받은 skin Disease Classification [Image Dataset]을 train, test를 위해 사용하였다.
+     - Kaggle에서 다운로드 받은 skin Disease Classification [Image Dataset]을 train, test를 위해 사용하였다.
        
 4. 기술스택
 
