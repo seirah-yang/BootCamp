@@ -1,0 +1,28 @@
+<html>
+    <head>
+        <title>선수정보 출력 </title>
+    </head>
+<style>
+    table, th, td {
+        border: 1px solid black;
+    }
+</style>
+
+    <body>
+<table>
+<tr>
+    <th>선수이름</th>
+    <th>선수 키</th>
+    <th>몸무게</th>
+</tr>
+    {% for row in result_table %}
+<tr>
+    <td>{{row.player_name}}</td>
+    <td>{{row.player_height}}</td>
+    <td>{{row.player_weight}}</td>
+</tr>
+{% endfor %}
+</table>
+</body>
+
+</html>
