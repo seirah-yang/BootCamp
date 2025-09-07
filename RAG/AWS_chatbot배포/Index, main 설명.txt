@@ -1,32 +1,35 @@
+## Q1. chat_history가 작동하는 기전 
+
 1.  chat_history = []가 “쌓이는” 기전
 
 	•	chat_history는 모듈 전역(global) 리스트
 	•	POST /가 호출될 때마다
-	```
-		chat_history.append({"user": user_input, "bot": None})
-		...
-		chat_history[-1]["bot"] = answer
-  ```
+```bash
+	chat_history.append({"user": user_input, "bot": None})
+	...
+	chat_history[-1]["bot"] = answer
+```
 로 현재 파이썬 프로세스 메모리에 계속 추가된다. 
 
 	•	그래서 서버 프로세스가 살아 있는 동안(새로고침/재시작 X, 리로더·배포로 프로세스 교체 X)에는 목록이 유지
 	•	하지만 전역 메모리는 서버 재시작/코드 리로드 시 초기화되고,
 	•	uvicorn --workers N 또는 Gunicorn+Uvicorn처럼 멀티 워커로 띄우면 각 워커가 서로 다른 메모리를 쓰므로 요청이 분산될 때 기록이 섞이거나 사라진 것처럼 보인다. 
+
 이런 이유로 전역 상태는 프로덕션에서 권장되지 않는다. 
 
-결론: 지금 방식은 “단일 프로세스 개발 모드에서만 임시로 유지되는 인메모리 로그”입니다.
+결론: 지금 방식은 “단일 프로세스 개발 모드에서만 임시로 유지되는 인메모리 로그” 이다.
 
 ⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻
 
 2. “저장돼서 나중에 불러오기”가 되려면 필요한 것 
-
-반드시 두 가지가 필요
-	1)	 영속 저장소
-	•	파일(JSON), SQLite/Postgres 같은 DB, 혹은 Redis 등 외부 스토리지 중 하나
+  반드시 두 가지가 필요
 	
-	2) 세션 식별자
-	•	사용자별로 대화를 분리하려면 session_id(쿠키/토큰/로그인 사용자 ID 등)가 필요
-	•	지금 코드는 모든 사용자가 chat_history 하나를 공유하는 구조라 사용자 구분이 불가
+  1) 영속 저장소
+	• 파일(JSON), SQLite/Postgres 같은 DB, 혹은 Redis 등 외부 스토리지 중 하나
+	
+  2) 세션 식별자
+	• 사용자별로 대화를 분리하려면 session_id(쿠키/토큰/로그인 사용자 ID 등)가 필요
+	• 지금 코드는 모든 사용자가 chat_history 하나를 공유하는 구조라 사용자 구분이 불가
 	
 ⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻
 
@@ -34,7 +37,7 @@
 
 아래 패치만 하면 사용자별로 기록이 디스크에 저장되고, 새로고침/재시작 후에도 불러와진다.
 
-``` 
+```bash
 	@app.post("/", response_class=HTMLResponse)
 	async def post_chat(request: Request, user_input: str = Form(...), session_id: str | None = Cookie(default=None)):
 	    sid = get_or_create_session_id(session_id)
@@ -63,20 +66,22 @@
     		if session_id is None:
         		resp.set_cookie("session_id", sid, httponly=True, samesite="lax")
     		return resp
-  ```
-▫︎  특징
-	•	사용자마다 session_id 쿠키를 발급하여 세션별 대화 분리
-	•	모든 대화를 data/chat_history.json에 지속 저장 → 서버 재시작 후에도 복원
-	•	템플릿엔 해당 세션의 리스트만 내려, 기존 index.html 변경 없이 사용 가능(변수명 동일: chat_history)
+```
 
-▫︎  주의: JSON 파일은 동시성·용량에 한계. 프로덕션에선 DB 권장.
+▫︎ 특징
+	• 사용자마다 session_id 쿠키를 발급하여 세션별 대화 분리
+	• 모든 대화를 data/chat_history.json에 지속 저장 
+	  → 서버 재시작 후에도 복원
+	• 템플릿엔 해당 세션의 리스트만 내려 기존 index.html 변경 없이 사용 가능하다.
+
+▫︎ 주의: JSON 파일은 동시성·용량에 한계. 프로덕션에선 DB 권장.
 
 ⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻
 
 4. 권장 수정안 B: SQLite + SQLModel/SQLAlchemy (프로덕션 지향)
+  스키마 예시:
 
-스키마 예시:
-```
+```bash
 # pip install sqlmodel
 	from sqlmodel import SQLModel, Field, create_engine, Session, select
 	from datetime import datetime
@@ -84,12 +89,12 @@
 	class ChatMessage(SQLModel, table=True):
     	id: int | None = Field(default=None, primary_key=True)
     	session_id: str = Field(index=True)
-    	role: str       # "user" | "bot"
+    	role: str                           # "user" | "bot"
     	content: str
     	created_at: datetime = Field(default_factory=datetime.utcnow)
 
 	engine = create_engine("sqlite:///chat.db", echo=False)
-	SQLModel.metadata.create_all(engine)  # 앱 시작 시 1회
+	SQLModel.metadata.create_all(engine)    # 앱 시작 시 1회
 
 	def add_msg(session_id: str, role: str, content: str):
     	with Session(engine) as s:
@@ -102,8 +107,8 @@
             	               .order_by(ChatMessage.created_at)))
 ```
 
-엔드포인트에서는 위 A안의 쿠키 로직을 그대로 쓰고, 저장·조회만 add_msg, get_history로 바꾸면 끝. 
-FastAPI 공식 튜토리얼의 DB 패턴을 그대로 따르는 방법이라 유지보수가 쉽다.  ￼ ￼ ￼
+- 엔드포인트에서는 위 A안의 쿠키 로직을 그대로 쓰고, 저장·조회만 add_msg, get_history로 바꾸면 끝이다.  
+- FastAPI 공식 튜토리얼의 DB 패턴을 그대로 따르는 방법이라 유지보수가 쉽다.  ￼ ￼ ￼
 
 ⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻
 
@@ -114,154 +119,167 @@ FastAPI 공식 튜토리얼의 DB 패턴을 그대로 따르는 방법이라 유
 
 ⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻
 
-Q. response_class=HTMLResponse의 역할과 “분류”
+## Q2. response_class=HTMLResponse의 역할과 “분류”
 
-1. 무엇을 하나
-	FastAPI 라우트 데코레이터의 response_class는 이 엔드포인트가 기본으로 어떤 “응답 객체(미디어 타입)”를 낼지를 지정한다. 
-	HTMLResponse를 쓰면 HTTP 헤더 Content-Type: text/html 로, HTML 본문을 반환하는 엔드포인트로 선언한다. 
-	또한 OpenAPI 문서에도 그렇게 기록된다.  ￼
-		•	HTMLResponse는 뭐죠?
-	Starlette(=FastAPI의 하부 ASGI 프레임워크)가 제공하는 응답 클래스(Response class) 중 하나예요. 응답 본문/헤더/상태코드를 캡슐화해 ASGI로 보내는 역할  ￼ ￼
-		•	대신 올 수 있는 것(동일 계열 “응답 클래스”)
-	대표 예시:
-		•	JSONResponse / ORJSONResponse(FastAPI 추가) – JSON 응답, application/json 설정  ￼ ￼
-		•	PlainTextResponse – 평문 텍스트
-		•	FileResponse – 파일 다운로드/서빙
-		•	StreamingResponse – 스트리밍 바디
-		•	RedirectResponse – 리다이렉트
-		•	TemplateResponse – Jinja 템플릿을 렌더링한 HTML(내부적으로도 Response)
-	이들은 모두 Response classes / Custom responses라는 범주에 속한다.  ￼ ￼
+1. 역할
+ • FastAPI 라우트 데코레이터의 response_class는 이 엔드포인트가 기본으로 어떤 “응답 객체(미디어 타입)”를 낼지를 지정한다. 
+ • HTMLResponse를 쓰면 HTTP 헤더 Content-Type: text/html 로, HTML 본문을 반환하는 엔드포인트로 선언한다. 
+ • 또한 OpenAPI 문서에도 그렇게 기록된다.  ￼
+	- HTMLResponse는 뭐죠?
+ • Starlette(=FastAPI의 하부 ASGI 프레임워크)가 제공하는 응답 클래스(Response class) 중 하나예요. 응답 본문/헤더/상태코드를 캡슐화해 ASGI로 보내는 역할  ￼ ￼
+	- 대신 올 수 있는 것(동일 계열 “응답 클래스”)
+ • 대표 예시:
+	- JSONResponse / ORJSONResponse(FastAPI 추가) – JSON 응답, application/json 설정  ￼ ￼
+	- PlainTextResponse – 평문 텍스트
+	- FileResponse – 파일 다운로드/서빙
+	- StreamingResponse – 스트리밍 바디
+	- RedirectResponse – 리다이렉트
+	- TemplateResponse – Jinja 템플릿을 렌더링한 HTML(내부적으로도 Response)
+ • 이들은 모두 Response classes / Custom responses라는 범주에 속한다.  ￼ ￼
 
-	보충: response_model은 “반환 데이터의 스키마(검증/문서화)”이고, response_class는 “HTTP 응답 형식(미디어 타입/전송 방식)” 지정
-			서로 다른 개념  ￼
+ • 보충: response_model은 “반환 데이터의 스키마(검증/문서화)”이고, response_class는 “HTTP 응답 형식(미디어 타입/전송 방식)” 지정
+		➞ 서로 다른 개념  ￼
 
 ⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻
 
-Q. index.html (Jinja2 템플릿)의 {% … %} 의미와 사용
+Q3. index.html (Jinja2 템플릿)의 {% … %} 의미와 사용
 
-2. Jinja2에서 템플릿 문법은 크게 3가지 구분
-	•	{{ … }}: 표현식 출력(변수 값/함수 결과를 HTML에 찍음)
-	•	{% … %}: 제어 구문(Statements/Control structures) – 흐름 제어(반복/조건/상속 등)
-	•	{# … #}: 주석(렌더링 결과에 포함 안 됨)
+1. Jinja2에서 템플릿 문법은 크게 3가지 구분
+  •	{{ … }}: 표현식 출력(변수 값/함수 결과를 HTML에 찍음)
+  •	{% … %}: 제어 구문(Statements/Control structures) – 흐름 제어(반복/조건/상속 등)
+  •	{# … #}: 주석(렌더링 결과에 포함 안 됨)
 ￼
-(1) {% %}의 역할
-	•	“로직”을 담당합니다. if/for/elif/else, block/extends, macro, set, include, with, filter, call 같은 제어 구조를 선언·종료할 때 사용합니다.  ￼ ￼
+  (1) {% %}의 역할
+	 - “로직”을 담당합니다. if/for/elif/else, block/extends, macro, set, include, with, filter, call 같은 제어 구조를 선언·종료할 때 사용합니다.  ￼ ￼
 
-(2) {% for chat in chat_history %} 와 {% endfor %}
-	•	chat_history(파이썬 리스트/이터러블)를 순회하면서, 각 원소를 chat 변수로 바인딩하고 루프 본문을 반복 출력합니다.
-	•	루프 종료는 반드시 {% endfor %} 로 닫아야 해요.
-```
+  (2) {% for chat in chat_history %} 와 {% endfor %}
+	 - chat_history(파이썬 리스트/이터러블)를 순회하면서, 각 원소를 chat 변수로 바인딩하고 루프 본문을 반복 출력합니다.
+	 - 루프 종료는 반드시 {% endfor %} 로 닫아야 해요.
+```bash
 	<div class="chat">
   	<div class="user">사용자: {{ chat.user }}</div>
   	<div class="bot">챗봇: {{ chat.bot }}</div>
 	</div>
 ```
-처럼, 루프 안에서 {{ … }}를 사용해 각 항목의 필드를 출력 ￼ ￼
+   • 루프 안에서 {{ … }}를 사용해 각 항목의 필드를 출력 ￼ ￼
 
-(3) {% %} 안에 올 수 있는 것
-	•	제어문: for … endfor, if/elif/else … endif, block … endblock, extends, include, macro … endmacro, set, with … endwith, filter … endfilter, call … endcall 등. (템플릿의 흐름·상속·컴포넌트화를 위한 모든 문장들)  ￼ ￼
+  (3) {% %} 안에 올 수 있는 것
+  	• 제어문: for … endfor, 
+		    if/elif/else … endif, 
+		    block … endblock, 
+		    extends, include, 
+		    macro … endmacro, 
+		    set, 
+		    with … endwith, 
+		    filter … endfilter, 
+		    call … endcall 등. (템플릿의 흐름·상속·컴포넌트화를 위한 모든 문장들)  ￼ ￼
 
-(4) {% %}가 올 수 있는/와야 하는 위치
-	•	HTML 어딘가에 자유롭게 배치할 수 있지만, 문법상 짝을 이루는 블록은 반드시 닫아야 하고, 렌더링 결과가 유효한 HTML이 되도록 구조를 유지해야 합니다. (예: <ul> 안에서 for로 <li>를 반복 생성 등)  ￼
-	•	**템플릿 상속 관련 태그(extends, block)**는 문서 최상단 또는 상단부에 두는 것이 관례(특히 extends는 보통 파일의 첫 줄).  ￼
-	•	속성 값 안에 넣는 것도 가능하지만, 가독성과 HTML 유효성을 위해 보통 태그 경계(열고 닫는 태그 사이)에 배치하는 게 안전합니다.  ￼
+   (4) {% %}가 올 수 있는/와야 하는 위치
+	• HTML 어딘가에 자유롭게 배치할 수 있지만, 문법상 짝을 이루는 블록은 반드시 닫아야 하고, 렌더링 결과가 유효한 HTML이 되도록 구조를 유지해야 한다.
+	 (예: <ul> 안에서 for로 <li>를 반복 생성 등)  ￼
+   	• 템플릿 상속 관련 태그(extends, block)는 문서 최상단 또는 상단부에 두는 것이 관례(특히 extends는 보통 파일의 첫 줄)
+    • 속성 값 안에 넣는 것도 가능하지만, 가독성과 HTML 유효성을 위해 보통 태그 경계(열고 닫는 태그 사이)에 배치하는 게 안전  ￼
+
+
+한 줄 요약
+	• response_class=HTMLResponse = “이 라우트는 HTML을 반환한다”는 선언(헤더/문서화까지 반영) → 응답 클래스 분류
+									  (JSONResponse, FileResponse, StreamingResponse, RedirectResponse, TemplateResponse 등) 중 하나를 고르는 것
+	• Jinja의 {% … %}는 제어 구문, {{ … }}는 값 출력
+		for … endfor로 리스트를 돌며 {{ chat.user }}/{{ chat.bot }} 같은 표현식을 출력한다. 
+	• 제어문은 어디서든 쓰되, 짝을 닫고 유효한 HTML을 유지해야 한다.
 
 ⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻
 
-한 줄 요약
-	•	response_class=HTMLResponse = “이 라우트는 HTML을 반환한다”는 선언(헤더/문서화까지 반영) → 응답 클래스 분류(JSONResponse, FileResponse, StreamingResponse, RedirectResponse, TemplateResponse 등) 중 하나를 고르는 것
-	•	Jinja의 {% … %}는 제어 구문, {{ … }}는 값 출력
-for … endfor로 리스트를 돌며 {{ chat.user }}/{{ chat.bot }} 같은 표현식을 출력한다. 제어문은 어디서든 쓰되, 짝을 닫고 유효한 HTML을 유지해야 한다.
+## Q4. div?
 
 1. <div>의 기본 개념
-	•	약자: division (구획, 구분)
-	•	역할: HTML 문서에서 논리적인 영역을 묶는 블록 컨테이너
-				- 자체적인 의미(semantic)는 없고, 단순히 묶고 구조화하는 용도
-				- CSS나 JavaScript로 스타일 지정·동작을 부여하기 위한 훅(hook) 으로 사용된다.
-	•	언제 쓰이나?
-				- 레이아웃을 구성할 때 (예: 헤더/사이드바/본문 묶기)
-				- 특정 스타일이나 기능을 그룹 단위로 적용할 때 (예: 채팅박스, 카드, 버튼 그룹)
-				- 반복되는 패턴(채팅 메시지, 목록 아이템 등)을 하나의 단위로 감싸야 할 때
-
+	• 약자: division (구획, 구분)
+	• 역할: HTML 문서에서 논리적인 영역을 묶는 블록 컨테이너
+		- 자체적인 의미(semantic)는 없고, 단순히 묶고 구조화하는 용도
+		- CSS나 JavaScript로 스타일 지정·동작을 부여하기 위한 훅(hook) 으로 사용된다.
+	• 언제 쓰이나?
+		- 레이아웃을 구성할 때 (예: 헤더/사이드바/본문 묶기)
+		- 특정 스타일이나 기능을 그룹 단위로 적용할 때 (예: 채팅박스, 카드, 버튼 그룹)
+		- 반복되는 패턴(채팅 메시지, 목록 아이템 등)을 하나의 단위로 감싸야 할 때
 
 2. 코드 속 <div>들의 역할
   ① <div class="chat-box">
- 	•	전체 채팅 UI의 컨테이너
- 	•	내부에 제목(<h1>), 대화 기록({% for chat in chat_history %} 반복문으로 생성된 여러 개의 <div class="chat">)과 입력폼(<form>)을 모두 포함.
-  	•	CSS에서 .chat-box { … }로 스타일을 지정할 때 최상위 레이아웃 역할을 함.
+ 	• 전체 채팅 UI의 컨테이너
+ 	• 내부에 제목(<h1>), 대화 기록({% for chat in chat_history %} 반복문으로 생성된 여러 개의 <div class="chat">)과 입력폼(<form>)을 모두 포함.
+  	• CSS에서 .chat-box { … }로 스타일을 지정할 때 최상위 레이아웃 역할을 함.
 
   ② <div class="chat">
-	•	대화 1턴(사용자+챗봇 메시지 세트) 를 감싸는 컨테이너
-	•	for 루프({% for chat in chat_history %})마다 반복적으로 생성되어, 한 쌍의 메시지를 표현.
-	•	이 안에 user 메시지와 bot 메시지가 들어 있음.
+	• 대화 1턴(사용자+챗봇 메시지 세트) 를 감싸는 컨테이너
+	• for 루프({% for chat in chat_history %})마다 반복적으로 생성되어, 한 쌍의 메시지를 표현.
+	• 이 안에 user 메시지와 bot 메시지가 들어 있음.
 
-	③ <div class="user">
-	•	사용자 메시지 영역
-	•	{{ chat.user }} 값을 출력 → 사용자가 입력한 텍스트가 여기에 표시됨.
-	•	CSS에서 .user { font-weight: bold; }처럼 사용자 메시지를 눈에 띄게 꾸밀 수 있음.
-	•	사용자:라는 prefix를 붙여 사람의 발화임을 명확히 구분.
+  ③ <div class="user">
+	• 사용자 메시지 영역
+	• {{ chat.user }} 값을 출력 → 사용자가 입력한 텍스트가 여기에 표시됨.
+	• CSS에서 .user { font-weight: bold; }처럼 사용자 메시지를 눈에 띄게 꾸밀 수 있음.
+	• 사용자:라는 prefix를 붙여 사람의 발화임을 명확히 구분.
 
-	④ <div class="bot">
-	•	챗봇 응답 메시지 영역
-	•	{{ chat.bot }} 값을 출력 → LLM의 답변이 여기에 들어감.
-	•	CSS에서 .bot { color: #333; margin-top: 0.5rem; }로 시각적으로 사용자 메시지와 차별화.
-	•	"챗봇:" prefix와 이모지를 붙여서 역할(화자) 을 강조.
+  ④ <div class="bot">
+	• 챗봇 응답 메시지 영역
+	• {{ chat.bot }} 값을 출력 → LLM의 답변이 여기에 들어감.
+	• CSS에서 .bot { color: #333; margin-top: 0.5rem; }로 시각적으로 사용자 메시지와 차별화.
+	• "챗봇:" prefix와 이모지를 붙여서 역할(화자) 을 강조.
 
-⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻
 3. 정리
-	•	<div> = division(구획), 의미 없는 블록 컨테이너
-	•	쓰임새 = 구조화, 그룹화, 스타일링, JS 조작 대상
-	•	예시 코드에서의 역할:
-	•	chat-box = 전체 영역
-	•	chat = 대화 한 턴 묶음
-	•	user = 사용자 메시지
-	•	bot = 챗봇 응답
+	• <div> = division(구획), 의미 없는 블록 컨테이너
+	• 쓰임새 = 구조화, 그룹화, 스타일링, JS 조작 대상
+	• 예시 코드에서의 역할:
+		chat-box = 전체 영역
+		chat = 대화 한 턴 묶음
+		user = 사용자 메시지
+		bot = 챗봇 응답
 
-
-[ 참고] 최근에는 의미론적 태그(<section>, <article>, <aside>, <header> 등)를 권장하지만, 채팅 UI 같은 단순 레이아웃/컨테이너 구조에서는 여전히 <div>가 많이 쓰인다. 
+[참고] 최근에는 의미론적 태그(<section>, <article>, <aside>, <header> 등)를 권장하지만, 채팅 UI 같은 단순 레이아웃/컨테이너 구조에서는 여전히 <div>가 많이 쓰인다. 
 
 ⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻
+## Q5. Form method="post", response_class=HTMLResponse와 async
+
 1.  <form method="post"> → @app.post("/") 흐름과 response_class=HTMLResponse의 역할
-	•	브라우저가 <form method="post" action="/">를 제출하면 HTTP POST / 요청이 서버로 감.
-	•	FastAPI는 @app.post("/")로 등록된 핸들러를 실행해.
-	•	response_class=HTMLResponse는 **“이 엔드포인트는 기본적으로 HTML을 반환한다”**는 선언이야. 즉, 기본 Content-Type을 text/html로 잡고(OpenAPI 문서에도 반영), 디폴트 JSON 응답 대신 HTML 응답 클래스를 쓰도록 한다. 
+	• 브라우저가 <form method="post" action="/">를 제출하면 HTTP POST / 요청이 서버로 간다. 
+	• FastAPI는 @app.post("/")로 등록된 핸들러를 실행해.
+	• response_class=HTMLResponse는 “이 엔드포인트는 기본적으로 HTML을 반환한다”는 선언이다. 
+	  즉, 기본 Content-Type을 text/html로 잡고(OpenAPI 문서에도 반영), 디폴트 JSON 응답 대신 HTML 응답 클래스를 쓰도록 한다. 
 
-[ 참고] 함수에서 TemplateResponse(Jinja 렌더 결과) 자체를 반환하고, 이 경우에는 TemplateResponse가 실제 응답이 된다. 
- 			즉 response_class는 “기본값/문서화” 역할이고, 실제로 뭘 돌려보내느냐는 return 값이 최종 결정이 된다. 
- 			response_class를 안 써도 TemplateResponse를 반환하면 HTML로 나가기 때문에 명시해두면 의도가 분명해지고 문서에 반영된다.  ￼
-
-⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻
+[참고] 함수에서 TemplateResponse(Jinja 렌더 결과) 자체를 반환하고, 이 경우에는 TemplateResponse가 실제 응답이 된다. 
+	  response_class는 “기본값/문서화” 역할이고, 실제로 뭘 돌려보내느냐는 return 값이 최종 결정이 된다. 
+ 	  response_class를 안 써도 TemplateResponse를 반환하면 HTML로 나가기 때문에 명시해두면 의도가 분명해지고 문서에 반영된다.  ￼
 
 2. async가 필요한 이유 _ “짝꿍”은?
-	•	FastAPI/Starlette는 ASGI(비동기) 프레임워크라서, async def로 작성하면 이벤트 루프에서 동시에 많은 I/O 작업(예: DB, 외부 API, 파일/네트워크)을 처리할 수 있다. 
-		➞ 기다리는 동안 스레드를 막지 않으니 동시성이 좋아짐.  ￼ ￼
-	•	언제 async를 쓰나?
-	     - 내부에서 await할 비동기 라이브러리를 쓸 때: 예) httpx.AsyncClient, asyncpg, aioredis, motor 등.
-	     - 외부 LLM API/DB 호출 등 I/O-bound 작업이 있는 경우
-	•	언제 def(동기)로 둬도 되나?
-	     - 순수 계산만 하거나, 비동기 호출이 전혀 없을 때. FastAPI가 이런 동기 핸들러는 스레드풀에서 실행해줘서 이벤트 루프를 막지 않는다.  ￼
-	     - 짝꿍: async의 짝은 await(그리고 비동기 클라이언트/드라이버). async def만 있고 await할 게 없으면 이점이 없다. 
-	     - 오히려 동기 I/O를 async에서 돌리면 이벤트 루프를 막을 수 있다. 
+	• FastAPI/Starlette는 ASGI(비동기) 프레임워크라서, async def로 작성하면 이벤트 루프에서 동시에 많은 I/O 작업(예: DB, 외부 API, 파일/네트워크)을 처리할 수 있다. 
+	  ➞ 기다리는 동안 스레드를 막지 않으니 동시성이 좋아짐.  ￼ ￼
+	• 언제 async를 쓰나?
+	   - 내부에서 await할 비동기 라이브러리를 쓸 때: 예) httpx.AsyncClient, asyncpg, aioredis, motor 등.
+	   - 외부 LLM API/DB 호출 등 I/O-bound 작업이 있는 경우
+	• 언제 def(동기)로 둬도 되나?
+	   - 순수 계산만 하거나, 비동기 호출이 전혀 없을 때. FastAPI가 이런 동기 핸들러는 스레드풀에서 실행해줘서 이벤트 루프를 막지 않는다.  ￼
+	   - 짝꿍: async의 짝은 await(그리고 비동기 클라이언트/드라이버). async def만 있고 await할 게 없으면 이점이 없다. 
+	   - 오히려 동기 I/O를 async에서 돌리면 이벤트 루프를 막을 수 있다. 
 
 ⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻
 
 3. async def post_chat(request: Request, user_input: str = Form(...))에서 Form(...)의 구조/역할
-	•	Form(...)는 FastAPI가 제공하는 의존성(Dependency) 선언이자 파라미터 소스 지정자이다.
-		➞ “user_input 값은 폼 데이터에서 꺼내라”는 신호
-	•	안 쓰면 FastAPI는 그 파라미터를 쿼리스트링(예: /?user_input=...)이나 JSON 바디로 해석하려고 해. Form을 써야 application/x-www-form-urlencoded 혹은 multipart/form-data에서 읽어온다.  ￼
-	•	Form(...)의 괄호 안에는 검증/기본값/메타데이터를 줄 수 있다.
-	•	Form(... )의 ...는 필수(required)를 의미
-		 예) Form(min_length=1, max_length=200, regex=...), description="..." 등도 가능
-	•	동작 원리(요약):
-	    ①	 브라우저가 <input name="user_input">를 포함해 폼 인코딩으로 POST 전송
-		② FastAPI가 user_input: str = Form(...)를 보고 폼 바디 파싱 후 해당 필드를 꺼냄
-		③ 타입 힌트(str)와 유효성 조건에 맞게 검증/변환해서 인자로 주입(FastAPI의 Dependency Injection 철학)  ￼
-	•	대안:
-		- 로우 레벨로 하고 싶으면 await request.form()으로 직접 파싱 가능. 다만 스키마/문서화/검증을 자동으로 얻는 건 Form(...) 방식이 훨씬 편하다.
-		- 여러 필드를 받거나 파일 업로드가 섞일 때는 Form(...)와 File(...)을 함께 선언하면 된다.
+   • Form(...)는 FastAPI가 제공하는 의존성(Dependency) 선언이자 파라미터 소스 지정자이다.
+	  ➞ “user_input 값은 폼 데이터에서 꺼내라”는 신호
+   • 안 쓰면 FastAPI는 그 파라미터를 쿼리스트링(예: /?user_input=...)이나 JSON 바디로 해석
+   • Form을 써야 application/x-www-form-urlencoded 혹은 multipart/form-data에서 읽어온다.  ￼
+   • Form(...)의 괄호 안에는 검증/기본값/메타데이터를 줄 수 있다.
+   • Form(... )의 ...는 필수(required)를 의미
+	 예) Form(min_length=1, max_length=200, regex=...), description="..." 등도 가능
+   • 동작 원리(요약):
+	  ① 브라우저가 <input name="user_input">를 포함해 폼 인코딩으로 POST 전송
+	  ② FastAPI가 user_input: str = Form(...)를 보고 폼 바디 파싱 후 해당 필드를 꺼냄
+	  ③ 타입 힌트(str)와 유효성 조건에 맞게 검증/변환해서 인자로 주입(FastAPI의 Dependency Injection 철학)  ￼
+   • 대안:
+	 - 로우 레벨로 하고 싶으면 await request.form()으로 직접 파싱 가능. 다만 스키마/문서화/검증을 자동으로 얻는 건 Form(...) 방식이 훨씬 편하다.
+	 - 여러 필드를 받거나 파일 업로드가 섞일 때는 Form(...)와 File(...)을 함께 선언하면 된다.
 
 간단 예시(참고)
-```
+```bash
 	from fastapi import FastAPI, Form
 	from fastapi.responses import HTMLResponse
 
@@ -271,41 +289,44 @@ for … endfor로 리스트를 돌며 {{ chat.user }}/{{ chat.bot }} 같은 표�
 	async def submit(user_input: str = Form(...)):
     	# user_input은 폼 필드에서 안전하게 파싱·검증됨
     	return f"<p>당신이 보낸 값: {user_input}</p>"
-   ```
+```
  •	위에서 response_class=HTMLResponse는 “이 엔드포인트는 HTML을 내보낸다”는 선언이고, 실제로는 문자열(HTML)을 반환하니 text/html로 응답한다. 
 
 ⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻
-Q. chat_history.append({"user":user_input, "bot":None})이 있는데, 봇은 대화내용을 따로 저장하지 않아도 되는거야 ? 아니면 아직 응답을 하지 않아서 None인거야 ?
 
-chat_history.append({"user": user_input, "bot": None})의 의미는 “사용자 입력은 먼저 기록해 두고, 챗봇 응답은 아직 없으니까 임시로 None으로 채워놓는다”라는 의미
+## Q6. chat_history.append({"user":user_input, "bot":None})이 있는데, 봇은 대화내용을 따로 저장하지 않아도 되는 것인가. 
+		아니면 아직 응답을 하지 않아서 None인 것인가.
 
-흐름을 단계별로 보면
-	① 사용자가 입력을 보내면, 그 순간은 아직 모델의 답변이 오기 전.
-	```
-		chat_history.append({"user": user_input, "bot": None})
-	```
+1. chat_history.append({"user": user_input, "bot": None})의 의미는 “사용자 입력은 먼저 기록해 두고, 챗봇 응답은 아직 없으니까 임시로 None으로 채워놓는다”라는 의미
+
+2. 흐름을 단계별로 보면
+  ① 사용자가 입력을 보내면, 그 순간은 아직 모델의 답변이 오기 전.
+
+```bash
+	chat_history.append({"user": user_input, "bot": None})
+```
 	→  사용자 발화는 남기고, 챗봇 발화는 빈 자리(None)로 마련한다.
 
-	②	그 다음에 모델(예: ollama.chat)을 호출해서 응답을 받아.
-	```
-		response = ollama.chat(...)
-		answer = response["message"]["content"]
-	```
+  ② 그 다음에 모델(예: ollama.chat)을 호출해서 응답을 받아.
+```bash
+	response = ollama.chat(...)
+	answer = response["message"]["content"]
+```
 	
-	③ 마지막으로 직전에 넣어둔 dict의 bot 값을 채워넣는 단계:
-	```
-		chat_history[-1]["bot"] = answer
-	```
-	•	챗봇 응답도 저장해야 해 → 다만 추가 append를 하는 대신 기존 항목(bot 필드)을 업데이트하는 구조를 선택한다.
-	•	None은 “아직 답변 전”이라는 플레이스홀더(placeholder) 역할
-	•	결국 chat_history에는 { "user": "...", "bot": "..." } 쌍이 저장돼서, 사용자/챗봇 1턴씩 묶인 구조가 유지된다.
+  ③ 마지막으로 직전에 넣어둔 dict의 bot 값을 채워넣는 단계:
+```bash
+	chat_history[-1]["bot"] = answer
+```
+  •	챗봇 응답도 저장해야 해 → 다만 추가 append를 하는 대신 기존 항목(bot 필드)을 업데이트하는 구조를 선택한다.
+  •	None은 “아직 답변 전”이라는 플레이스홀더(placeholder) 역할
+  •	결국 chat_history에는 { "user": "...", "bot": "..." } 쌍이 저장돼서, 사용자/챗봇 1턴씩 묶인 구조가 유지된다.
 
 👉 만약 사용자 발화와 챗봇 응답을 완전히 따로 append 하고 싶다면 다음과 같이 할 수 있다. 
 
-```
-chat_history.append({"role": "user", "content": user_input})
-chat_history.append({"role": "bot", "content": answer})
+```bash
+	chat_history.append({"role": "user", "content": user_input})
+	chat_history.append({"role": "bot", "content": answer})
 ```
 
-	•	이 경우엔 history가 리스트 형태로 쌓이고, 각 항목이 발화 하나씩을 의미
-	•	반대로 지금 방식은 “Q&A를 하나의 dict로 묶어서 저장”하는 모델
+  •	이 경우엔 history가 리스트 형태로 쌓이고, 각 항목이 발화 하나씩을 의미
+  •	반대로 지금 방식은 “Q&A를 하나의 dict로 묶어서 저장”하는 모델
