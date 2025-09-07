@@ -19,7 +19,6 @@
 
 결론: 지금 방식은 “단일 프로세스 개발 모드에서만 임시로 유지되는 인메모리 로그” 이다.
 
-⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻
 
 2. “저장돼서 나중에 불러오기”가 되려면 필요한 것 
   반드시 두 가지가 필요
@@ -30,11 +29,9 @@
   2) 세션 식별자
 	• 사용자별로 대화를 분리하려면 session_id(쿠키/토큰/로그인 사용자 ID 등)가 필요
 	• 지금 코드는 모든 사용자가 chat_history 하나를 공유하는 구조라 사용자 구분이 불가
-	
-⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻
+
 
 3. 최소 수정안 A: JSON 파일로 간단 영속화 (+쿠키 세션)
-
 아래 패치만 하면 사용자별로 기록이 디스크에 저장되고, 새로고침/재시작 후에도 불러와진다.
 
 ```bash
@@ -76,7 +73,6 @@
 
 ▫︎ 주의: JSON 파일은 동시성·용량에 한계. 프로덕션에선 DB 권장.
 
-⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻
 
 4. 권장 수정안 B: SQLite + SQLModel/SQLAlchemy (프로덕션 지향)
   스키마 예시:
@@ -110,7 +106,6 @@
 - 엔드포인트에서는 위 A안의 쿠키 로직을 그대로 쓰고, 저장·조회만 add_msg, get_history로 바꾸면 끝이다.  
 - FastAPI 공식 튜토리얼의 DB 패턴을 그대로 따르는 방법이라 유지보수가 쉽다.  ￼ ￼ ￼
 
-⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻
 
 5. 왜 이렇게 해야 하냐(근거 요약)
 	•	전역 메모리 = 프로세스 로컬 상태 멀티 워커/재시작에 취약 → 기록 일관성 보장 불가.  ￼ ￼
@@ -128,6 +123,7 @@
 	- HTMLResponse는 뭐죠?
  • Starlette(=FastAPI의 하부 ASGI 프레임워크)가 제공하는 응답 클래스(Response class) 중 하나예요. 응답 본문/헤더/상태코드를 캡슐화해 ASGI로 보내는 역할  ￼ ￼
 	- 대신 올 수 있는 것(동일 계열 “응답 클래스”)
+
  • 대표 예시:
 	- JSONResponse / ORJSONResponse(FastAPI 추가) – JSON 응답, application/json 설정  ￼ ￼
 	- PlainTextResponse – 평문 텍스트
@@ -135,6 +131,7 @@
 	- StreamingResponse – 스트리밍 바디
 	- RedirectResponse – 리다이렉트
 	- TemplateResponse – Jinja 템플릿을 렌더링한 HTML(내부적으로도 Response)
+
  • 이들은 모두 Response classes / Custom responses라는 범주에 속한다.  ￼ ￼
 
  • 보충: response_model은 “반환 데이터의 스키마(검증/문서화)”이고, response_class는 “HTTP 응답 형식(미디어 타입/전송 방식)” 지정
@@ -154,14 +151,16 @@ Q3. index.html (Jinja2 템플릿)의 {% … %} 의미와 사용
 
   (2) {% for chat in chat_history %} 와 {% endfor %}
 	 - chat_history(파이썬 리스트/이터러블)를 순회하면서, 각 원소를 chat 변수로 바인딩하고 루프 본문을 반복 출력합니다.
-	 - 루프 종료는 반드시 {% endfor %} 로 닫아야 해요.
+	 - 루프 종료는 반드시 {% endfor %} 로 닫아야 한다. 
+
 ```bash
 	<div class="chat">
   	<div class="user">사용자: {{ chat.user }}</div>
   	<div class="bot">챗봇: {{ chat.bot }}</div>
 	</div>
 ```
-   • 루프 안에서 {{ … }}를 사용해 각 항목의 필드를 출력 ￼ ￼
+
+  • 루프 안에서 {{ … }}를 사용해 각 항목의 필드를 출력 ￼ ￼
 
   (3) {% %} 안에 올 수 있는 것
   	• 제어문: for … endfor, 
@@ -201,6 +200,7 @@ Q3. index.html (Jinja2 템플릿)의 {% … %} 의미와 사용
 		- 레이아웃을 구성할 때 (예: 헤더/사이드바/본문 묶기)
 		- 특정 스타일이나 기능을 그룹 단위로 적용할 때 (예: 채팅박스, 카드, 버튼 그룹)
 		- 반복되는 패턴(채팅 메시지, 목록 아이템 등)을 하나의 단위로 감싸야 할 때
+
 
 2. 코드 속 <div>들의 역할
   ① <div class="chat-box">
@@ -260,7 +260,6 @@ Q3. index.html (Jinja2 템플릿)의 {% … %} 의미와 사용
 	   - 짝꿍: async의 짝은 await(그리고 비동기 클라이언트/드라이버). async def만 있고 await할 게 없으면 이점이 없다. 
 	   - 오히려 동기 I/O를 async에서 돌리면 이벤트 루프를 막을 수 있다. 
 
-⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻⸻
 
 3. async def post_chat(request: Request, user_input: str = Form(...))에서 Form(...)의 구조/역할
    • Form(...)는 FastAPI가 제공하는 의존성(Dependency) 선언이자 파라미터 소스 지정자이다.
@@ -279,6 +278,7 @@ Q3. index.html (Jinja2 템플릿)의 {% … %} 의미와 사용
 	 - 여러 필드를 받거나 파일 업로드가 섞일 때는 Form(...)와 File(...)을 함께 선언하면 된다.
 
 간단 예시(참고)
+
 ```bash
 	from fastapi import FastAPI, Form
 	from fastapi.responses import HTMLResponse
@@ -305,18 +305,22 @@ Q3. index.html (Jinja2 템플릿)의 {% … %} 의미와 사용
 ```bash
 	chat_history.append({"user": user_input, "bot": None})
 ```
+
 	→  사용자 발화는 남기고, 챗봇 발화는 빈 자리(None)로 마련한다.
 
-  ② 그 다음에 모델(예: ollama.chat)을 호출해서 응답을 받아.
+  ② 그 다음에 모델(예: ollama.chat)을 호출해서 응답
+
 ```bash
 	response = ollama.chat(...)
 	answer = response["message"]["content"]
 ```
 	
   ③ 마지막으로 직전에 넣어둔 dict의 bot 값을 채워넣는 단계:
+
 ```bash
 	chat_history[-1]["bot"] = answer
 ```
+
   •	챗봇 응답도 저장해야 해 → 다만 추가 append를 하는 대신 기존 항목(bot 필드)을 업데이트하는 구조를 선택한다.
   •	None은 “아직 답변 전”이라는 플레이스홀더(placeholder) 역할
   •	결국 chat_history에는 { "user": "...", "bot": "..." } 쌍이 저장돼서, 사용자/챗봇 1턴씩 묶인 구조가 유지된다.
