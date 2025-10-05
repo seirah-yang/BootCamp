@@ -1,0 +1,6 @@
+# Scikit learn = ML library
+# 데이터 전처리부터 머신러닝 알고리즘까지 구현되어 있음
+# Anaconda를 설치하면 같이 설치되어 있어 따로 설치가 필요 없으나 
+
+# 설치가 필요한 경우 
+pip install scikit-learn
