@@ -1,0 +1,357 @@
+{
+  "nbformat": 4,
+  "nbformat_minor": 0,
+  "metadata": {
+    "colab": {
+      "provenance": [],
+      "gpuType": "T4",
+      "mount_file_id": "1rkcv9K0juXCgp53MZRzxOg6HP0PEhLVs",
+      "authorship_tag": "ABX9TyNoPD1Puj+O2hppJONgvLjb",
+      "include_colab_link": true
+    },
+    "kernelspec": {
+      "name": "python3",
+      "display_name": "Python 3"
+    },
+    "language_info": {
+      "name": "python"
+    },
+    "accelerator": "GPU"
+  },
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "view-in-github",
+        "colab_type": "text"
+      },
+      "source": [
+        "<a href=\"https://colab.research.google.com/github/seirah-yang/BootCamp/blob/main/t-test%2C%20ANOVA%20%EB%AA%A8%EB%93%88%20%ED%95%A8%EC%88%98%ED%99%94%20\" target=\"_parent\"><img src=\"https://colab.research.google.com/assets/colab-badge.svg\" alt=\"Open In Colab\"/></a>"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "**Module - 설계 원칙**\n",
+        "\n",
+        "(1) 단일 책임 원칙 (Single Responsibility Principle)\n",
+        "\n",
+        "    각 함수는 “한 가지 역할”만 수행해야 함\n",
+        "\n",
+        "(2) 입출력 명확화 (Explicit I/O)\n",
+        "\n",
+        "    모든 모듈은 JSON-like 형태의 입력과 출력을 주고받음\n",
+        "\n",
+        "(3) 효과\n",
+        "\n",
+        "    유지보수성 : 규정 개정 시 해당 모듈만 교체\n",
+        "    확장성 : Validator 모듈만 교체하면 법규별 자동화 가능\n",
+        "    자동화 : 가정검정 결과에 따라 사후검정 방식 자동 결정\n",
+        "    일관성 : 통계 보고서 표준화 (DataFrame 반환 + plot)\n",
+        "    재사용성 : pipeline 함수 하나로 전체 분석 수행 가능\n"
+      ],
+      "metadata": {
+        "id": "HtJUhKMz33hd"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "from google.colab import drive\n",
+        "drive.mount('/content/drive')"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "rNM96dGa2t2Q",
+        "outputId": "cf40ca37-67a9-46cc-bd50-615969cfc3fb"
+      },
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Mounted at /content/drive\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "!pip install pingouin"
+      ],
+      "metadata": {
+        "id": "eeWp26Va1aRX"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "import pandas as pd\n",
+        "from pandas import Series, DataFrame\n",
+        "import numpy as np\n",
+        "\n",
+        "#df = pd.read_csv(\"/content/drive/MyDrive/pharma-data.csv\")\n",
+        "#df.head()\n",
+        "#'['Distributor', 'Customer Name', 'City', 'Country', 'Latitude', 'Longitude', 'Channel', 'Sub-channel',\n",
+        "#'Product Name', 'Product Class', 'Quantity', 'Price', 'Sales', 'Month', 'Year', 'Name of Sales Rep',\n",
+        "#'Manager', 'Sales Team']"
+      ],
+      "metadata": {
+        "id": "EzTXBvT62mTl"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "## 1. t-test\n",
+        "\n",
+        "“Mood stabilizer 판매량이 높은 지역 vs 낮은 지역에서 진통제 판매량의 차이 비교 분석\"\n",
+        "\n",
+        "     - 독립 변수 : Product Class (Mood stabilizer 판매량이 높은 지역 vs 낮은 지역)\n",
+        "     - 종속 변수 : 두 그룹간의 진통제 판매량 비교\n",
+        "\n",
+        "---\n",
+        "        종속={dep_var}, 독립={indep_var}, 그룹={group_var}\n",
+        "        - \"Product Class\" = [\"Analgesic\", \"Mood Stabilizer\"]\n",
+        "        - Mood stabilizer판매량 기준\n",
+        "            group_var = hight_reigion/low_region\n",
+        "        - 약물군 dep & indep var = base_class=\"Mood Stabilizers\" ,compare_class=\"Analgesics\"\n",
+        "        "
+      ],
+      "metadata": {
+        "id": "rI0VXSLZ1V-t"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# ====================================================\n",
+        "# pharma_utils.py\n",
+        "# ====================================================\n",
+        "import pandas as pd\n",
+        "import numpy as np\n",
+        "from scipy.stats import (\n",
+        "    shapiro, levene, ttest_ind, pearsonr, spearmanr, f_oneway\n",
+        ")\n",
+        "from statsmodels.formula.api import ols\n",
+        "import statsmodels.api as sm\n",
+        "import pingouin as pg\n",
+        "import matplotlib.pyplot as plt\n",
+        "import seaborn as sns\n",
+        "\n",
+        "# 1️⃣ 데이터 로딩\n",
+        "def load_data(path: str) -> pd.DataFrame:\n",
+        "    df = pd.read_csv(path)\n",
+        "    return df\n",
+        "\n",
+        "\n",
+        "# 2️⃣ 정규성 검정\n",
+        "def test_normality(df, group_col, value_col):\n",
+        "    \"\"\"샘플 수에 따라 Shapiro 또는 Kolmogorov-Smirnov Test 적용\"\"\"\n",
+        "    results = []\n",
+        "    for group, data in df.groupby(group_col):\n",
+        "        sample = data[value_col].dropna()\n",
+        "        if len(sample) < 50:\n",
+        "            stat, p = shapiro(sample)\n",
+        "            method = \"Shapiro-Wilk\"\n",
+        "        else:\n",
+        "            from scipy.stats import kstest, norm\n",
+        "            stat, p = kstest(sample, \"norm\", args=(sample.mean(), sample.std()))\n",
+        "            method = \"Kolmogorov–Smirnov\"\n",
+        "        results.append({\"Group\": group, \"Method\": method, \"Statistic\": stat, \"p_value\": p})\n",
+        "    return pd.DataFrame(results)\n",
+        "\n",
+        "\n",
+        "# 3️⃣ 등분산성 검정 (Levene)\n",
+        "def test_homoscedasticity(df, group_col, value_col):\n",
+        "    \"\"\"Levene’s Test for Equality of Variances\"\"\"\n",
+        "    groups = [data[value_col].dropna() for _, data in df.groupby(group_col)]\n",
+        "    stat, p = levene(*groups)\n",
+        "    return {\"Levene_stat\": stat, \"p_value\": p, \"equal_var\": p >= 0.05}\n",
+        "\n",
+        "\n",
+        "# 4️⃣ t-test (독립표본)\n",
+        "def ttest_groups(df, group_col, value_col, alpha=0.05):\n",
+        "    \"\"\"Mood Stabilizers vs Analgesics 등 두 그룹 비교\"\"\"\n",
+        "    groups = df[group_col].unique()\n",
+        "    if len(groups) != 2:\n",
+        "        raise ValueError(\"t-test는 두 그룹만 비교 가능합니다.\")\n",
+        "    g1, g2 = [df[df[group_col] == g][value_col].dropna() for g in groups]\n",
+        "    stat, p = ttest_ind(g1, g2, equal_var=True)\n",
+        "    return {\"t_stat\": stat, \"p_value\": p, \"significant\": p < alpha}\n",
+        "\n",
+        "\n",
+        "# 5️⃣ 상관분석\n",
+        "def correlation_analysis(df, col1, col2, method=\"pearson\"):\n",
+        "    \"\"\"두 연속형 변수 간의 상관관계 분석\"\"\"\n",
+        "    if method == \"pearson\":\n",
+        "        r, p = pearsonr(df[col1], df[col2])\n",
+        "    elif method == \"spearman\":\n",
+        "        r, p = spearmanr(df[col1], df[col2])\n",
+        "    return {\"method\": method, \"r\": r, \"p_value\": p, \"significant\": p < 0.05}\n",
+        "\n",
+        "\n",
+        "# 6️⃣ One-way ANOVA\n",
+        "def one_way_anova(df, group_col, value_col):\n",
+        "    groups = [data[value_col].dropna() for _, data in df.groupby(group_col)]\n",
+        "    stat, p = f_oneway(*groups)\n",
+        "    return {\"F\": stat, \"p_value\": p, \"significant\": p < 0.05}\n",
+        "\n",
+        "\n",
+        "# 7️⃣ Two-way ANOVA\n",
+        "def two_way_anova(df, dv, between):\n",
+        "    formula = f\"{dv} ~ {' + '.join(between)} + {'*'.join(between)}\"\n",
+        "    model = ols(formula, data=df).fit()\n",
+        "    anova_table = sm.stats.anova_lm(model, typ=2)\n",
+        "    return anova_table\n",
+        "\n",
+        "\n",
+        "# 8️⃣ 반복측정 ANOVA\n",
+        "def repeated_anova(df, dv, within, subject):\n",
+        "    result = pg.rm_anova(dv=dv, within=within, subject=subject, data=df, detailed=True)\n",
+        "    return result\n",
+        "\n",
+        "\n",
+        "# 9️⃣ 사후검정\n",
+        "def posthoc_analysis(df, group_col, value_col, equal_var=True):\n",
+        "    \"\"\"Tukey HSD 또는 Games-Howell 자동선택\"\"\"\n",
+        "    if equal_var:\n",
+        "        return pg.pairwise_tukey(data=df, dv=value_col, between=group_col)\n",
+        "    else:\n",
+        "        return pg.pairwise_gameshowell(data=df, dv=value_col, between=group_col)\n"
+      ],
+      "metadata": {
+        "id": "nCqpgFza6a2R"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# ====================================================\n",
+        "# pharma_stats_pipeline.py\n",
+        "# ====================================================\n",
+        "from pharma_utils import (\n",
+        "    load_data, test_normality, test_homoscedasticity,\n",
+        "    ttest_groups, correlation_analysis, one_way_anova, two_way_anova,\n",
+        "    repeated_anova, posthoc_analysis, plot_group_comparison\n",
+        ")\n",
+        "import pandas as pd\n",
+        "\n",
+        "def pharma_stats_pipeline(\n",
+        "    path, analysis_type=\"anova\",\n",
+        "    group_col=None, value_col=None,\n",
+        "    factors=None, subject_col=None,\n",
+        "    col1=None, col2=None, alpha=0.05\n",
+        "):\n",
+        "    \"\"\"\n",
+        "    통합 통계 분석 파이프라인\n",
+        "    ---------------------------\n",
+        "    analysis_type: \"ttest\", \"correlation\", \"anova\"\n",
+        "    group_col: 그룹 변수명\n",
+        "    value_col: 종속 변수명\n",
+        "    col1, col2: 상관분석 변수명\n",
+        "    factors: Two-way ANOVA 시 [factor1, factor2]\n",
+        "    subject_col: 반복측정 ANOVA 시 피험자 변수명\n",
+        "    \"\"\"\n",
+        "    df = load_data(path)\n",
+        "    print(f\"데이터 shape: {df.shape}\\n\")\n",
+        "\n",
+        "    results = {}\n",
+        "\n",
+        "    # 1️⃣ 가정 검정 (t-test & anova 공통)\n",
+        "    if analysis_type in [\"ttest\", \"anova\"]:\n",
+        "        print(\"=== [정규성 검정] ===\")\n",
+        "        norm_result = test_normality(df, group_col, value_col)\n",
+        "        print(norm_result)\n",
+        "        results[\"normality\"] = norm_result\n",
+        "\n",
+        "        print(\"\\n=== [등분산성 검정] ===\")\n",
+        "        homo_result = test_homoscedasticity(df, group_col, value_col)\n",
+        "        print(homo_result)\n",
+        "        results[\"homoscedasticity\"] = homo_result\n",
+        "\n",
+        "    # 2️⃣ 분석 유형별 실행\n",
+        "    if analysis_type == \"ttest\":\n",
+        "        print(\"\\n=== [t-test 결과] ===\")\n",
+        "        res = ttest_groups(df, group_col, value_col)\n",
+        "        results[\"t_test\"] = res\n",
+        "        print(res)\n",
+        "\n",
+        "    elif analysis_type == \"correlation\":\n",
+        "        print(\"\\n=== [상관분석 결과] ===\")\n",
+        "        res = correlation_analysis(df, col1, col2, method=\"pearson\")\n",
+        "        results[\"correlation\"] = res\n",
+        "        print(res)\n",
+        "\n",
+        "    elif analysis_type == \"anova\":\n",
+        "        print(\"\\n=== [분산분석 결과] ===\")\n",
+        "        if factors is None:\n",
+        "            res = one_way_anova(df, group_col, value_col)\n",
+        "        elif len(factors) == 2:\n",
+        "            res = two_way_anova(df, dv=value_col, between=factors)\n",
+        "        elif subject_col:\n",
+        "            res = repeated_anova(df, dv=value_col, within=group_col, subject=subject_col)\n",
+        "        else:\n",
+        "            raise ValueError(\"ANOVA 유형을 명확히 지정하세요.\")\n",
+        "        results[\"anova\"] = res\n",
+        "        print(res)\n",
+        "\n",
+        "        # 3️⃣ 사후검정 (ANOVA만)\n",
+        "        print(\"\\n=== [사후검정 결과] ===\")\n",
+        "        posthoc = posthoc_analysis(df, group_col, value_col, equal_var=homo_result[\"equal_var\"])\n",
+        "        print(posthoc)\n",
+        "        results[\"posthoc\"] = posthoc\n",
+        "\n",
+        "        # 4️⃣ 시각화\n",
+        "        plot_group_comparison(df, group_col, value_col, title=f\"{group_col} vs {value_col}\")\n",
+        "\n",
+        "    else:\n",
+        "        raise ValueError(\"analysis_type은 'ttest', 'correlation', 'anova' 중 하나여야 합니다.\")\n",
+        "\n",
+        "    print(\"\\n=== 분석 완료 ===\")\n",
+        "    return results"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "8oFIiWSedo84",
+        "outputId": "f5caaf87-340d-42eb-d122-572441a03ad1"
+      },
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "데이터 로드 완료 — 254082행, 18열\n",
+            "[VARIABLES] 종속=Sales, 독립=Product Class, 그룹=City\n",
+            "\n",
+            "[INFO] Mood Stabilizers vs Analgesics 비교 = 데이터 수: 46415 vs 44751\n",
+            "[Welch’s t-test] t=-3.188, p=0.0014\n",
+            " 두 집단 간 평균 판매량 차이는 통계적으로 유의합니다. (p < 0.05)\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [],
+      "metadata": {
+        "id": "j6iVtyTs2GJ3"
+      },
+      "execution_count": null,
+      "outputs": []
+    }
+  ]
+}
